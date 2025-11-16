@@ -1,199 +1,152 @@
-/********************************************************************
- * Projeto: Envio de Dados MQTT com ESP32 - Global Solution 2025
- * Autor: André Tritiack
- * Placa: DOIT ESP32 DEVKIT V1
- * 
- * Descrição:
- * Este projeto conecta o ESP32 a uma rede Wi-Fi e a um Broker MQTT.
- * A cada 10 segundos, envia uma mensagem JSON contendo:
- * - ID do grupo
- * - ID do módulo
- * - IP local
- * - Dados de temperatura e umidade do sensor DHT22
- * - Valor analógico do potenciômetro (0-4095)
- * 
- * Baseado no repositório original:
- * https://github.com/arnaldojr/iot-esp32-wokwi-vscode
- * Professor Arnaldo Viana - FIAP
- ********************************************************************/
-
-//----------------------------------------------------------
-// Bibliotecas já disponíveis no ambiente ESP32
-
+#include <Arduino.h>
 #include <WiFi.h>
-
-//----------------------------------------------------------
-// Bibliotecas a instalar pelo Gerenciador de Bibliotecas
-
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
-#include <Adafruit_Sensor.h>
-#include <DHT.h>
 
-//----------------------------------------------------------
-// Definições e configurações
+// --- Configurações de Rede (Q1) ---
+// (Não precisa mexer, usa a rede Wi-Fi do Wokwi)
+const char* ssid = "Wokwi-GUEST";
+const char* password = "";
 
-#define boardLED 2      // LED onboard
-#define DHTPIN 12       // Pino de dados do DHT
-#define DHTTYPE DHT22   // DHT22 (AM2302)
-#define POTPIN 34       // Pino do potenciômetro (GPIO34/ADC6)
+// --- Configurações do Broker MQTT (Q1) ---
+const char* mqtt_server = "broker.hivemq.com";
+const int mqtt_port = 1883;
 
-// Identificadores
-const char* ID        = "ID_do_Grupo";
-const char* moduleID  = "Meu_ESP32";
+// --- Configurações do Projeto SkillUp ---
+const char* ID = "559250_560027_560393"; // TODO: Validar RMs
+const char* moduleID = "FocusTimer_01";  // ID deste dispositivo
 
-// Wi-Fi
-const char* SSID      = "Wokwi-GUEST";
-const char* PASSWORD  = "";
+// --- Pinos ---
+#define BTN_PIN 4      // Botão de Foco (conectado ao D4)
+#define LED_PIN 2      // LED onboard do ESP32
 
-// MQTT Broker (NÃO ALTERE ESSAS CONFIGURAÇÕES, CASO QUEIRA USAR OS RECURSOS
-// DA VM DISPONIBILIZADA PELO PROFESSOR)
-const char* BROKER_MQTT  = "172.208.54.189";
-const int   BROKER_PORT  = 1883;
-const char* mqttUser     = "gs2025";
-const char* mqttPassword = "q1w2e3r4";
-
-// Tópico MQTT
-#define TOPICO_PUBLISH  "2TDS/esp32/teste"
-
-//----------------------------------------------------------
-// Variáveis globais
-
+// --- Variáveis de Controle ---
 WiFiClient espClient;
-PubSubClient MQTT(espClient);
-JsonDocument doc;  // Documento JSON dinâmico
-char buffer[256];  // Buffer para o JSON serializado
-DHT dht(DHTPIN, DHTTYPE);
+PubSubClient client(espClient);
+unsigned long lastMsg = 0;
+bool isFocusSession = false; // Controla o estado (START/END)
+String uniqueClientID;       // ID Unico (MAC Address) para conexao MQTT
 
-float temperatura;
-float umidade;
-int valorPot;      // Valor do potenciômetro
+// --- Função: Conectar ao WiFi ---
+void setup_wifi() {
+    delay(10);
+    Serial.println();
+    Serial.print("Conectando ao Wi-Fi: ");
+    Serial.println(ssid);
 
-//----------------------------------------------------------
-// Conexão Wi-Fi
+    WiFi.begin(ssid, password);
 
-void initWiFi() {
-    WiFi.begin(SSID, PASSWORD);
-    Serial.print("Conectando ao Wi-Fi");
     while (WiFi.status() != WL_CONNECTED) {
-        delay(1000);
+        delay(500);
         Serial.print(".");
     }
-    Serial.println("\nWi-Fi conectado!");
+
+    Serial.println("");
+    Serial.println("Wi-Fi conectado!");
     Serial.print("IP: ");
     Serial.println(WiFi.localIP());
-    Serial.print("MAC Address: ");
+    Serial.print("MAC: ");
     Serial.println(WiFi.macAddress());
 }
 
-void reconectaWiFi() {
-    if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("Reconectando Wi-Fi...");
-        initWiFi();
-    }
-}
-
-//----------------------------------------------------------
-// Conexão MQTT
-
-void initMQTT() {
-    MQTT.setServer(BROKER_MQTT, BROKER_PORT);
-    while (!MQTT.connected()) {
-        Serial.println("Conectando ao Broker MQTT...");
-        if (MQTT.connect(moduleID, mqttUser, mqttPassword)) {
+// --- Função: Conectar ao Broker MQTT ---
+void reconnect_mqtt() {
+    while (!client.connected()) {
+        Serial.print("Conectando ao Broker MQTT...");
+        
+        // Tenta conectar usando o ID Unico (MAC)
+        if (client.connect(uniqueClientID.c_str())) {
             Serial.println("Conectado ao Broker!");
         } else {
             Serial.print("Falha na conexão. Estado: ");
-            Serial.println(MQTT.state());
-            delay(2000);
+            Serial.print(client.state());
+            Serial.println(" Tentando novamente em 5 segundos...");
+            delay(5000);
         }
     }
 }
 
-void verificaConexoesWiFiEMQTT() {
-    reconectaWiFi();
-    if (!MQTT.connected()) {
-        initMQTT();
-    }
-    MQTT.loop();
-}
+// --- Função: Enviar Mensagem de Foco ---
+void sendFocusMessage(String status) {
+    StaticJsonDocument<256> doc;
 
-//----------------------------------------------------------
-// Envio e feedback
-
-void enviaEstadoOutputMQTT() {
-    MQTT.publish(TOPICO_PUBLISH, buffer);
-    Serial.println("Mensagem publicada com sucesso!");
-}
-
-void piscaLed() {
-    digitalWrite(boardLED, HIGH);
-    delay(300);
-    digitalWrite(boardLED, LOW);
-}
-
-//----------------------------------------------------------
-// Setup inicial
-
-void setup() {
-    Serial.begin(115200);
-    pinMode(boardLED, OUTPUT);
-    pinMode(POTPIN, INPUT);  // Configura pino do potenciômetro
-    digitalWrite(boardLED, LOW);
-    dht.begin();
-    initWiFi();    
-    initMQTT();
-}
-
-//----------------------------------------------------------
-// Loop principal
-
-void loop() {
-    // Verifica e mantém conexões ativas com Wi-Fi e MQTT
-    verificaConexoesWiFiEMQTT();
-
-    // Leitura dos dados do sensor DHT
-    temperatura = dht.readTemperature();
-    umidade = dht.readHumidity();
-
-    // Leitura do potenciômetro
-    valorPot = analogRead(POTPIN);
-
-    // Limpa o documento JSON para nova utilização
+    // Limpar o doc antes de montar
     doc.clear();
 
-    // 1. Identificação
-    doc["ID"] = ID;
-    doc["Sensor"] = moduleID;
-
-    // 2. Rede
+    // Monta o JSON definido no projeto SkillUp
+    doc["ID_Grupo"] = ID;
+    doc["Modulo"] = moduleID;
     doc["IP"] = WiFi.localIP().toString();
     doc["MAC"] = WiFi.macAddress();
+    doc["Status"] = status; // "FOCUS_START" ou "FOCUS_END"
 
-    // 3. Dados de sensores
-    if (!isnan(temperatura) && !isnan(umidade)) {
-        doc["Temperatura"] = temperatura;
-        doc["Umidade"] = umidade;
-    } else {
-        doc["Temperatura"] = "Erro na leitura";
-        doc["Umidade"] = "Erro na leitura";
-    }
-
-    // 4. Dados do potenciômetro
-    doc["Potenciometro"] = valorPot;
-
-    // Serializa JSON para string
+    char buffer[256];
     serializeJson(doc, buffer);
 
-    // Exibe no monitor serial
+    // Publica no tópico
+    String topico = String("FIAP/SkillUp/Focus/") + ID;
+    client.publish(topico.c_str(), buffer);
+
+    Serial.print("Mensagem enviada [");
+    Serial.print(topico);
+    Serial.print("]: ");
     Serial.println(buffer);
 
-    // Envia via MQTT
-    enviaEstadoOutputMQTT();
+    // Pisca o LED para feedback
+    digitalWrite(LED_PIN, HIGH);
+    delay(100);
+    digitalWrite(LED_PIN, LOW);
+}
 
-    // Feedback visual
-    piscaLed();
+// --- SETUP: Executa uma vez ---
+void setup() {
+    Serial.begin(115200);
+    
+    // Configura os pinos
+    pinMode(LED_PIN, OUTPUT);
+    // Configura o botão: INPUT_PULLUP usa o resistor interno do ESP32.
+    pinMode(BTN_PIN, INPUT_PULLUP);
 
-    // Intervalo de envio
-    delay(10000);
+    setup_wifi(); // Wi-Fi deve vir primeiro
+
+    // Cria o ID Unico para o MQTT
+    String mac = WiFi.macAddress();
+    uniqueClientID = String(moduleID) + "-" + mac;
+    
+    Serial.print("ID de Cliente MQTT Unico: ");
+    Serial.println(uniqueClientID);
+
+    // Aponta o cliente para o servidor (broker)
+    client.setServer(mqtt_server, mqtt_port);
+}
+
+// --- LOOP: Executa continuamente ---
+void loop() {
+    // Garante que o cliente MQTT esteja conectado
+    if (!client.connected()) {
+        reconnect_mqtt();
+    }
+    client.loop(); // Mantem a conexao MQTT ativa
+
+    // --- Lógica do Botão ---
+    // Leitura do botão (LOW = pressionado, por causa do PULLUP)
+    if (digitalRead(BTN_PIN) == LOW) {
+        
+        Serial.println("Botão pressionado!");
+        
+        // Controla o estado da sessão
+        if (isFocusSession) {
+            // Se estava focado, termina a sessão
+            sendFocusMessage("FOCUS_END");
+            isFocusSession = false;
+        } else {
+            // Se não estava focado, inicia a sessão
+            sendFocusMessage("FOCUS_START");
+            isFocusSession = true;
+        }
+
+        // Delay para "Debounce"
+        // Evita leitura múltipla de um único clique
+        delay(1000); 
+    }
 }

@@ -1,21 +1,22 @@
 {
   "version": 1,
-  "author": "André Tritiack",
+  "author": "SkillUp Team (Baseado no Q1)",
   "editor": "wokwi",
   "parts": [
     { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 76.8, "left": 100.84, "attrs": {} },
-    { "type": "wokwi-dht22", "id": "dht1", "top": -57.3, "left": -101.4, "attrs": {} },
-    { "type": "wokwi-potentiometer", "id": "pot1", "top": -49.3, "left": -19.4, "attrs": {} }
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn1",
+      "top": 54.2,
+      "left": -57.6,
+      "attrs": { "color": "green" }
+    }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
     [ "esp:RX", "$serialMonitor:TX", "", [] ],
-    [ "dht1:VCC", "esp:3V3", "red", [ "v0" ] ],
-    [ "esp:GND.1", "dht1:GND", "black", [ "h0" ] ],
-    [ "esp:12", "dht1:SDA", "green", [ "v0", "h-95.85" ] ],
-    [ "pot1:VCC", "esp:3V3", "red", [ "v0" ] ],
-    [ "pot1:GND", "esp:GND.1", "black", [ "v0" ] ],
-    [ "esp:34", "pot1:SIG", "gold", [ "h0" ] ]
+    [ "btn1:1.l", "esp:GND.1", "black", [ "h0" ] ],
+    [ "btn1:2.r", "esp:4", "green", [ "h0", "v-10", "h140" ] ]
   ],
   "dependencies": {}
-} 
+}
