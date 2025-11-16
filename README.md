@@ -52,11 +52,6 @@ Para a simulação no Wokwi usamos o broker público HiveMQ, pois o broker da FI
 - **Porta:** `1883`
 - **Autenticação:** nenhuma (conexão anônima)
 
-Node-RED (opcional, local):
-
-- **Interface:** `http://127.0.0.1:1880/`
-- **Dashboard:** `http://127.0.0.1:1880/ui`
-
 ### Formato do JSON enviado
 
 ```json
