@@ -90,7 +90,7 @@ Pré-requisitos:
 Instalação rápida (exemplo):
 
 ```powershell
-git clone https://github.com/SEU_USUARIO/SkillUp-IoT-Project.git
+git clone https://github.com/BrunoCSoares/SkillUp-IoT-Project
 cd SkillUp-IoT-Project
 ```
 
@@ -102,6 +102,8 @@ node-red
 ```
 
 No Node-RED instale o dashboard via Manage palette: procure por `@flowfuse/node-red-dashboard`.
+
+Observação: o JSON com o modelo (fluxos) do Node-RED pronto está em `2TDS-GS2025\\q1\\node-red\\flows.json`. Importe esse arquivo no Node-RED (Menu > Import > Clipboard/File) para carregar o fluxo predefinido.
 
 ## Dependências
 
